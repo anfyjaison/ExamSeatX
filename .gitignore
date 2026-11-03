@@ -1,0 +1,25 @@
+# Gradle build artifacts
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE specific files
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# Node & frontend artifacts
+node_modules/
+dist/
+.vite/
+
+# System / OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs
+*.log

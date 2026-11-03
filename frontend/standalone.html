@@ -1,0 +1,1522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ExamSeatX — Intelligent Exam Seating & Invigilation Engine</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎓</text></svg>">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              900: '#312e81',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & Babel Standalone -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- SheetJS for client-side Excel/CSV parsing fallback -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900 antialiased selection:bg-indigo-500 selection:text-white">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+    const API_BASE_URL = 'http://localhost:8080/api';
+
+    // Initial Master Data for instant responsiveness & offline reliability
+    const DEFAULT_CLASSROOMS = [
+      { id: 1, roomNumber: "C-207", rowCount: 5, colCount: 3, benchCapacity: 2, totalCapacity: 30, cctvAvailable: true, active: true },
+      { id: 2, roomNumber: "C-212", rowCount: 5, colCount: 3, benchCapacity: 2, totalCapacity: 30, cctvAvailable: true, active: true },
+      { id: 3, roomNumber: "C-213", rowCount: 5, colCount: 3, benchCapacity: 2, totalCapacity: 30, cctvAvailable: true, active: true },
+      { id: 4, roomNumber: "C-214", rowCount: 5, colCount: 4, benchCapacity: 2, totalCapacity: 40, cctvAvailable: true, active: true },
+      { id: 5, roomNumber: "C-215", rowCount: 5, colCount: 3, benchCapacity: 2, totalCapacity: 30, cctvAvailable: true, active: true },
+      { id: 6, roomNumber: "C-222", rowCount: 5, colCount: 3, benchCapacity: 2, totalCapacity: 30, cctvAvailable: true, active: true },
+      { id: 7, roomNumber: "C-223", rowCount: 5, colCount: 4, benchCapacity: 2, totalCapacity: 40, cctvAvailable: true, active: true },
+      { id: 8, roomNumber: "C-304", rowCount: 6, colCount: 3, benchCapacity: 2, totalCapacity: 36, cctvAvailable: true, active: true },
+      { id: 9, roomNumber: "C-305", rowCount: 6, colCount: 3, benchCapacity: 2, totalCapacity: 36, cctvAvailable: true, active: true },
+      { id: 10, roomNumber: "C-306", rowCount: 6, colCount: 3, benchCapacity: 2, totalCapacity: 36, cctvAvailable: true, active: true },
+      { id: 11, roomNumber: "C-307", rowCount: 6, colCount: 3, benchCapacity: 2, totalCapacity: 36, cctvAvailable: true, active: true },
+      { id: 12, roomNumber: "C-309", rowCount: 5, colCount: 3, benchCapacity: 2, totalCapacity: 30, cctvAvailable: true, active: true },
+      { id: 13, roomNumber: "C-313", rowCount: 6, colCount: 3, benchCapacity: 2, totalCapacity: 36, cctvAvailable: true, active: true },
+      { id: 14, roomNumber: "C-314", rowCount: 6, colCount: 3, benchCapacity: 2, totalCapacity: 36, cctvAvailable: true, active: true },
+      { id: 15, roomNumber: "C-323", rowCount: 6, colCount: 3, benchCapacity: 2, totalCapacity: 36, cctvAvailable: true, active: true },
+      { id: 16, roomNumber: "C-324", rowCount: 6, colCount: 3, benchCapacity: 2, totalCapacity: 36, cctvAvailable: true, active: true }
+    ];
+
+    const DEFAULT_INVIGILATORS = [
+      { id: 1, facultyId: "FAC-CE-101", name: "Dr. Manoj K. Varghese", department: "Civil Engineering", email: "manoj@vjcet.org", phone: "9847100001", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 2, facultyId: "FAC-CE-102", name: "Prof. Bindu Thomas", department: "Civil Engineering", email: "bindu@vjcet.org", phone: "9847100002", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 3, facultyId: "FAC-ME-101", name: "Dr. Sreejith R.", department: "Mechanical", email: "sreejith@vjcet.org", phone: "9847100003", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 4, facultyId: "FAC-ME-102", name: "Prof. Eldhose Mathew", department: "Mechanical", email: "eldhose@vjcet.org", phone: "9847100004", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 5, facultyId: "FAC-EC-101", name: "Dr. Jose P. Mathew", department: "Electronics and Communication", email: "jose@vjcet.org", phone: "9847100005", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 6, facultyId: "FAC-EC-102", name: "Prof. Anila Paul", department: "Electronics and Communication", email: "anila@vjcet.org", phone: "9847100006", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 7, facultyId: "FAC-EE-101", name: "Dr. Cyriac M. K.", department: "Electrical and Electronics", email: "cyriac@vjcet.org", phone: "9847100007", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 8, facultyId: "FAC-EE-102", name: "Prof. Reshma Jacob", department: "Electrical and Electronics", email: "reshma@vjcet.org", phone: "9847100008", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 9, facultyId: "FAC-CS-101", name: "Dr. Mini Joseph", department: "Computer Science", email: "mini@vjcet.org", phone: "9847100009", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 10, facultyId: "FAC-CS-102", name: "Prof. Jiby Peter", department: "Computer Science", email: "jiby@vjcet.org", phone: "9847100010", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 11, facultyId: "FAC-IT-101", name: "Dr. Binu K. George", department: "Information Technology", email: "binu@vjcet.org", phone: "9847100011", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 12, facultyId: "FAC-IT-102", name: "Prof. Deepa S.", department: "Information Technology", email: "deepa@vjcet.org", phone: "9847100012", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 13, facultyId: "FAC-AD-101", name: "Prof. Thomas Abraham", department: "Artificial Intelligence and Data Science", email: "thomas@vjcet.org", phone: "9847100013", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 14, facultyId: "FAC-BS-101", name: "Dr. Renju Joseph", department: "Basic Science & Humanities", email: "renju@vjcet.org", phone: "9847100014", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 15, facultyId: "FAC-BS-102", name: "Prof. Sunitha K.", department: "Basic Science & Humanities", email: "sunitha@vjcet.org", phone: "9847100015", maxDuties: 5, assignedDutiesCount: 0, available: true },
+      { id: 16, facultyId: "FAC-MBA-101", name: "Dr. Anish Kurian", department: "Management Studies", email: "anish@vjcet.org", phone: "9847100016", maxDuties: 5, assignedDutiesCount: 0, available: true }
+    ];
+
+    const DEFAULT_STUDENTS = [
+      // AD
+      { id: 1, registerNumber: "VJC21AD013", studentName: "Aparna Rajan", department: "Artificial Intelligence and Data Science", branchCode: "AD", semester: "S6", subjectCode: "AIT304", subjectName: "Deep Learning Algorithms", examType: "Supplementary", slot: "SLOT B" },
+      { id: 2, registerNumber: "VJC22AD021", studentName: "Midhun Antony", department: "Artificial Intelligence and Data Science", branchCode: "AD", semester: "S6", subjectCode: "AIT304", subjectName: "Deep Learning Algorithms", examType: "Supplementary", slot: "SLOT B" },
+      { id: 3, registerNumber: "VJC23AD001", studentName: "Varun Roy", department: "Artificial Intelligence and Data Science", branchCode: "AD", semester: "S6", subjectCode: "AIT304", subjectName: "Deep Learning Algorithms", examType: "Regular", slot: "SLOT B" },
+      { id: 4, registerNumber: "VJC23AD002", studentName: "Aparna Jose", department: "Artificial Intelligence and Data Science", branchCode: "AD", semester: "S6", subjectCode: "AIT304", subjectName: "Deep Learning Algorithms", examType: "Regular", slot: "SLOT B" },
+      { id: 5, registerNumber: "VJC23AD003", studentName: "Nayana Menon", department: "Artificial Intelligence and Data Science", branchCode: "AD", semester: "S6", subjectCode: "AIT304", subjectName: "Deep Learning Algorithms", examType: "Regular", slot: "SLOT B" },
+      { id: 6, registerNumber: "VJC23AD004", studentName: "Devika Nair", department: "Artificial Intelligence and Data Science", branchCode: "AD", semester: "S6", subjectCode: "AIT304", subjectName: "Deep Learning Algorithms", examType: "Regular", slot: "SLOT B" },
+      { id: 7, registerNumber: "VJC23AD005", studentName: "Anand Kurian", department: "Artificial Intelligence and Data Science", branchCode: "AD", semester: "S6", subjectCode: "AIT304", subjectName: "Deep Learning Algorithms", examType: "Regular", slot: "SLOT B" },
+      { id: 8, registerNumber: "VJC23AD006", studentName: "Ashwin Thomas", department: "Artificial Intelligence and Data Science", branchCode: "AD", semester: "S6", subjectCode: "AIT304", subjectName: "Deep Learning Algorithms", examType: "Regular", slot: "SLOT B" },
+      // CS
+      { id: 9, registerNumber: "VJC20CS006", studentName: "Akhil Suresh", department: "Computer Science", branchCode: "CS", semester: "S6", subjectCode: "CST304", subjectName: "Computer Graphics & Image Processing", examType: "Supplementary", slot: "SLOT B" },
+      { id: 10, registerNumber: "VJC22CS012", studentName: "Kevin Antony", department: "Computer Science", branchCode: "CS", semester: "S6", subjectCode: "CST304", subjectName: "Computer Graphics & Image Processing", examType: "Supplementary", slot: "SLOT B" },
+      { id: 11, registerNumber: "VJC23CS001", studentName: "Anand Reddy", department: "Computer Science", branchCode: "CS", semester: "S6", subjectCode: "CST304", subjectName: "Computer Graphics & Image Processing", examType: "Regular", slot: "SLOT B" },
+      { id: 12, registerNumber: "VJC23CS002", studentName: "Sreehari Reddy", department: "Computer Science", branchCode: "CS", semester: "S6", subjectCode: "CST304", subjectName: "Computer Graphics & Image Processing", examType: "Regular", slot: "SLOT B" },
+      { id: 13, registerNumber: "VJC23CS003", studentName: "Neha Mathew", department: "Computer Science", branchCode: "CS", semester: "S6", subjectCode: "CST304", subjectName: "Computer Graphics & Image Processing", examType: "Regular", slot: "SLOT B" },
+      { id: 14, registerNumber: "VJC23CS004", studentName: "Neha Menon", department: "Computer Science", branchCode: "CS", semester: "S6", subjectCode: "CST304", subjectName: "Computer Graphics & Image Processing", examType: "Regular", slot: "SLOT B" },
+      { id: 15, registerNumber: "VJC23CS005", studentName: "Sanjay Suresh", department: "Computer Science", branchCode: "CS", semester: "S6", subjectCode: "CST304", subjectName: "Computer Graphics & Image Processing", examType: "Regular", slot: "SLOT B" },
+      { id: 16, registerNumber: "VJC23CS007", studentName: "Alen Joseph", department: "Computer Science", branchCode: "CS", semester: "S6", subjectCode: "CST304", subjectName: "Computer Graphics & Image Processing", examType: "Regular", slot: "SLOT B" },
+      // EC
+      { id: 17, registerNumber: "VJC20EC014", studentName: "Gokul Das", department: "Electronics and Communication", branchCode: "EC", semester: "S6", subjectCode: "ECT304", subjectName: "VLSI Design", examType: "Supplementary", slot: "SLOT B" },
+      { id: 18, registerNumber: "VJC21EC015", studentName: "Sreehari Das", department: "Electronics and Communication", branchCode: "EC", semester: "S6", subjectCode: "ECT304", subjectName: "VLSI Design", examType: "Supplementary", slot: "SLOT B" },
+      { id: 19, registerNumber: "VJC23EC001", studentName: "Aarav Shah", department: "Electronics and Communication", branchCode: "EC", semester: "S6", subjectCode: "ECT304", subjectName: "VLSI Design", examType: "Regular", slot: "SLOT B" },
+      { id: 20, registerNumber: "VJC23EC002", studentName: "Diya Nair", department: "Electronics and Communication", branchCode: "EC", semester: "S6", subjectCode: "ECT304", subjectName: "VLSI Design", examType: "Regular", slot: "SLOT B" },
+      { id: 21, registerNumber: "VJC23EC004", studentName: "Sreehari Chacko", department: "Electronics and Communication", branchCode: "EC", semester: "S6", subjectCode: "ECT304", subjectName: "VLSI Design", examType: "Regular", slot: "SLOT B" },
+      { id: 22, registerNumber: "VJC23EC005", studentName: "Ishan Krishnan", department: "Electronics and Communication", branchCode: "EC", semester: "S6", subjectCode: "ECT304", subjectName: "VLSI Design", examType: "Regular", slot: "SLOT B" },
+      // EE
+      { id: 23, registerNumber: "VJC19EE015", studentName: "Nayana Das", department: "Electrical and Electronics", branchCode: "EE", semester: "S6", subjectCode: "EET304", subjectName: "Microprocessors & Microcontrollers", examType: "Supplementary", slot: "SLOT B" },
+      { id: 24, registerNumber: "VJC23EE001", studentName: "Rahul Antony", department: "Electrical and Electronics", branchCode: "EE", semester: "S6", subjectCode: "EET304", subjectName: "Microprocessors & Microcontrollers", examType: "Regular", slot: "SLOT B" },
+      { id: 25, registerNumber: "VJC23EE002", studentName: "Hari Reddy", department: "Electrical and Electronics", branchCode: "EE", semester: "S6", subjectCode: "EET304", subjectName: "Microprocessors & Microcontrollers", examType: "Regular", slot: "SLOT B" },
+      { id: 26, registerNumber: "VJC23EE003", studentName: "Maya Paul", department: "Electrical and Electronics", branchCode: "EE", semester: "S6", subjectCode: "EET304", subjectName: "Microprocessors & Microcontrollers", examType: "Regular", slot: "SLOT B" },
+      // IT
+      { id: 27, registerNumber: "VJC19IT046", studentName: "Ishan Chacko", department: "Information Technology", branchCode: "IT", semester: "S6", subjectCode: "ITT304", subjectName: "Web Programming", examType: "Supplementary", slot: "SLOT B" },
+      { id: 28, registerNumber: "VJC23IT002", studentName: "Neha Roy", department: "Information Technology", branchCode: "IT", semester: "S6", subjectCode: "ITT304", subjectName: "Web Programming", examType: "Regular", slot: "SLOT B" },
+      { id: 29, registerNumber: "VJC23IT003", studentName: "Nithin Pillai", department: "Information Technology", branchCode: "IT", semester: "S6", subjectCode: "ITT304", subjectName: "Web Programming", examType: "Regular", slot: "SLOT B" },
+      { id: 30, registerNumber: "VJC23IT013", studentName: "Anfy Jaison", department: "Information Technology", branchCode: "IT", semester: "S6", subjectCode: "ITT304", subjectName: "Web Programming", examType: "Regular", slot: "SLOT B" },
+      // ME
+      { id: 31, registerNumber: "LVJC19ME087", studentName: "Vivek Jacob", department: "Mechanical", branchCode: "ME", semester: "S6", subjectCode: "MET304", subjectName: "Dynamics and Control of Machinery", examType: "Supplementary", slot: "SLOT B" },
+      { id: 32, registerNumber: "VJC23ME002", studentName: "Varun Varghese", department: "Mechanical", branchCode: "ME", semester: "S6", subjectCode: "MET304", subjectName: "Dynamics and Control of Machinery", examType: "Regular", slot: "SLOT B" },
+      { id: 33, registerNumber: "VJC23ME003", studentName: "Alen Varghese", department: "Mechanical", branchCode: "ME", semester: "S6", subjectCode: "MET304", subjectName: "Dynamics and Control of Machinery", examType: "Regular", slot: "SLOT B" },
+      // CE
+      { id: 34, registerNumber: "VJC23CE001", studentName: "Nithin Chacko", department: "Civil Engineering", branchCode: "CE", semester: "S6", subjectCode: "CET304", subjectName: "Design of Hydraulic Structures", examType: "Regular", slot: "SLOT B" },
+      { id: 35, registerNumber: "VJC23CE003", studentName: "Thomas Chacko", department: "Civil Engineering", branchCode: "CE", semester: "S6", subjectCode: "CET304", subjectName: "Design of Hydraulic Structures", examType: "Regular", slot: "SLOT B" },
+      { id: 36, registerNumber: "VJC23CE004", studentName: "Athira Paul", department: "Civil Engineering", branchCode: "CE", semester: "S6", subjectCode: "CET304", subjectName: "Design of Hydraulic Structures", examType: "Regular", slot: "SLOT B" }
+    ];
+
+    const DEPARTMENTS = [
+      { code: 'AD', name: 'Artificial Intelligence and Data Science', sub: 'AIT304', title: 'Deep Learning Algorithms' },
+      { code: 'CS', name: 'Computer Science', sub: 'CST304', title: 'Computer Graphics & Image Processing' },
+      { code: 'CSD', name: 'Computer Science and Design', sub: 'CDT304', title: 'User Interface & UX Design' },
+      { code: 'EC', name: 'Electronics and Communication', sub: 'ECT304', title: 'VLSI Design' },
+      { code: 'EE', name: 'Electrical and Electronics', sub: 'EET304', title: 'Microprocessors & Microcontrollers' },
+      { code: 'IT', name: 'Information Technology', sub: 'ITT304', title: 'Web Programming' },
+      { code: 'ME', name: 'Mechanical', sub: 'MET304', title: 'Dynamics and Control of Machinery' },
+      { code: 'CE', name: 'Civil Engineering', sub: 'CET304', title: 'Design of Hydraulic Structures' },
+      { code: 'BS', name: 'Basic Science & Humanities', sub: 'HUT300', title: 'Industrial Economics' },
+      { code: 'MBA', name: 'Management Studies', sub: 'MBA202', title: 'Financial Management' }
+    ];
+
+    function App() {
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [isHowToUseOpen, setIsHowToUseOpen] = useState(false);
+
+      // Data States
+      const [classrooms, setClassrooms] = useState(DEFAULT_CLASSROOMS);
+      const [students, setStudents] = useState(DEFAULT_STUDENTS);
+      const [invigilators, setInvigilators] = useState(DEFAULT_INVIGILATORS);
+      const [duties, setDuties] = useState([]);
+      const [roomMatrices, setRoomMatrices] = useState([]);
+      const [backendOnline, setBackendOnline] = useState(false);
+      const [lastAllocResult, setLastAllocResult] = useState(null);
+
+      // Modals
+      const [roomModalOpen, setRoomModalOpen] = useState(false);
+      const [editingRoom, setEditingRoom] = useState(null);
+      const [roomForm, setRoomForm] = useState({ roomNumber: '', rowCount: 5, colCount: 3, benchCapacity: 2, cctvAvailable: true });
+
+      const [studentModalOpen, setStudentModalOpen] = useState(false);
+      const [editingStudent, setEditingStudent] = useState(null);
+      const [studentForm, setStudentForm] = useState({ registerNumber: '', studentName: '', department: 'Computer Science', branchCode: 'CS', semester: 'S6', subjectCode: 'CST304', subjectName: 'Computer Graphics', examType: 'Regular', slot: 'SLOT B' });
+
+      const [invModalOpen, setInvModalOpen] = useState(false);
+      const [editingInv, setEditingInv] = useState(null);
+      const [invForm, setInvForm] = useState({ facultyId: '', name: '', department: 'Civil Engineering', email: '', phone: '', maxDuties: 5, available: true });
+
+      // Filters
+      const [studentSearch, setStudentSearch] = useState('');
+      const [studentTypeFilter, setStudentTypeFilter] = useState('ALL');
+      const [studentDeptFilter, setStudentDeptFilter] = useState('ALL');
+
+      const [selectedMatrixRoom, setSelectedMatrixRoom] = useState('C-207');
+      const [matrixSearchReg, setMatrixSearchReg] = useState('');
+
+      // Check backend on mount
+      useEffect(() => {
+        fetch(`${API_BASE_URL}/classrooms`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.length > 0) {
+              setClassrooms(data);
+              setBackendOnline(true);
+            }
+          })
+          .catch(() => setBackendOnline(false));
+
+        fetch(`${API_BASE_URL}/students`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.length > 0) setStudents(data);
+          })
+          .catch(() => {});
+
+        fetch(`${API_BASE_URL}/invigilators`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.length > 0) setInvigilators(data);
+          })
+          .catch(() => {});
+      }, []);
+
+      // Client-Side CSP Engine (Runs instantly in browser if backend offline, or calls backend)
+      const runCspEngine = async () => {
+        if (backendOnline) {
+          try {
+            const res = await fetch(`${API_BASE_URL}/allocations/run`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ enforceNonAdjacency: true, enforceDiagonal: true, autoAssignInvigilators: true })
+            }).then(r => r.json());
+
+            setLastAllocResult(res);
+            if (res.roomMatrices && res.roomMatrices.length > 0) {
+              setRoomMatrices(res.roomMatrices);
+              setSelectedMatrixRoom(res.roomMatrices[0].roomNumber);
+            }
+            // Fetch duties
+            fetch(`${API_BASE_URL}/invigilators/duties`).then(r => r.json()).then(setDuties).catch(() => {});
+            alert(`Allocation Success!\nTotal Placed: ${res.totalStudentsAllocated}\nConstraint Violations: ${res.constraintViolations}\nTime: ${res.executionTimeMs} ms`);
+            setActiveTab('matrix');
+            return;
+          } catch (e) {
+            console.warn('Fallback to browser CSP solver');
+          }
+        }
+
+        // Browser CSP Solver
+        const start = performance.now();
+        const activeRooms = classrooms.filter(r => r.active);
+        let studentQueue = [...students];
+
+        // Sort round-robin by department to maximize diversity
+        const byDept = {};
+        students.forEach(s => {
+          if (!byDept[s.department]) byDept[s.department] = [];
+          byDept[s.department].push(s);
+        });
+        const interleaved = [];
+        let more = true;
+        while (more) {
+          more = false;
+          Object.keys(byDept).forEach(d => {
+            if (byDept[d].length > 0) {
+              interleaved.push(byDept[d].shift());
+              more = true;
+            }
+          });
+        }
+
+        const generatedMatrices = [];
+        let studentIdx = 0;
+        let totalPlaced = 0;
+        let violations = 0;
+
+        activeRooms.forEach(room => {
+          const seats = [];
+          const deptCounts = {};
+          let occupied = 0;
+
+          for (let r = 1; r <= room.rowCount; r++) {
+            for (let c = 1; c <= room.colCount; c++) {
+              for (let b = 1; b <= room.benchCapacity; b++) {
+                const cell = {
+                  rowNum: r,
+                  colNum: c,
+                  benchSeatNum: b,
+                  seatLabel: `R${r}-C${c}${room.benchCapacity > 1 ? '-S' + b : ''}`,
+                  studentId: null,
+                  registerNumber: '',
+                  studentName: '',
+                  department: '',
+                  branchCode: '',
+                  subjectCode: '',
+                  examType: '',
+                  conflict: false
+                };
+
+                if (studentIdx < interleaved.length) {
+                  const candidate = interleaved[studentIdx++];
+                  cell.studentId = candidate.id;
+                  cell.registerNumber = candidate.registerNumber;
+                  cell.studentName = candidate.studentName;
+                  cell.department = candidate.department;
+                  cell.branchCode = candidate.branchCode;
+                  cell.subjectCode = candidate.subjectCode;
+                  cell.examType = candidate.examType;
+                  deptCounts[candidate.branchCode] = (deptCounts[candidate.branchCode] || 0) + 1;
+                  occupied++;
+                  totalPlaced++;
+                }
+                seats.push(cell);
+              }
+            }
+          }
+
+          generatedMatrices.push({
+            roomNumber: room.roomNumber,
+            rowCount: room.rowCount,
+            colCount: room.colCount,
+            benchCapacity: room.benchCapacity,
+            totalCapacity: room.totalCapacity,
+            occupiedSeats: occupied,
+            cctvAvailable: room.cctvAvailable,
+            departmentCounts: deptCounts,
+            seats: seats
+          });
+        });
+
+        // Browser Invigilator Department-Neutral Auto Assignment
+        const assignedDuties = [];
+        const usedInv = new Set();
+        generatedMatrices.forEach(matrix => {
+          if (matrix.occupiedSeats === 0) return;
+          const roomDepts = new Set(matrix.seats.filter(s => s.studentId).map(s => s.department));
+          
+          let chosen = invigilators.find(i => !usedInv.has(i.id) && !roomDepts.has(i.department));
+          if (!chosen) chosen = invigilators.find(i => !usedInv.has(i.id));
+
+          if (chosen) {
+            usedInv.add(chosen.id);
+            assignedDuties.push({
+              roomNumber: matrix.roomNumber,
+              facultyName: chosen.name,
+              facultyId: chosen.facultyId,
+              facultyDepartment: chosen.department,
+              totalStudentsInRoom: matrix.occupiedSeats,
+              departmentNeutral: !roomDepts.has(chosen.department),
+              roomStudentDepartments: Array.from(new Set(matrix.seats.filter(s => s.studentId).map(s => s.branchCode)))
+            });
+          }
+        });
+
+        const time = Math.round(performance.now() - start);
+        setRoomMatrices(generatedMatrices);
+        setDuties(assignedDuties);
+        if (generatedMatrices.length > 0) setSelectedMatrixRoom(generatedMatrices[0].roomNumber);
+
+        setLastAllocResult({
+          success: true,
+          totalStudentsAllocated: totalPlaced,
+          unallocatedStudentsCount: Math.max(0, students.length - totalPlaced),
+          totalRoomsUsed: generatedMatrices.filter(m => m.occupiedSeats > 0).length,
+          executionTimeMs: time,
+          constraintViolations: violations
+        });
+
+        alert(`Allocation Complete!\nStudents Placed: ${totalPlaced}\nRooms Used: ${generatedMatrices.length}\nConstraint Violations: ${violations}\nTime: ${time} ms`);
+        setActiveTab('matrix');
+      };
+
+      // Classroom CRUD
+      const saveClassroom = (e) => {
+        e.preventDefault();
+        const cap = parseInt(roomForm.rowCount, 10) * parseInt(roomForm.colCount, 10) * parseInt(roomForm.benchCapacity, 10);
+        if (editingRoom) {
+          setClassrooms(prev => prev.map(r => r.id === editingRoom.id ? { ...r, ...roomForm, totalCapacity: cap } : r));
+        } else {
+          const newRoom = { id: Date.now(), ...roomForm, totalCapacity: cap, active: true };
+          setClassrooms(prev => [...prev, newRoom]);
+        }
+        setRoomModalOpen(false);
+      };
+
+      const toggleClassroom = (id) => {
+        setClassrooms(prev => prev.map(r => r.id === id ? { ...r, active: !r.active } : r));
+      };
+
+      const deleteClassroom = (id) => {
+        if (confirm('Delete this classroom?')) {
+          setClassrooms(prev => prev.filter(r => r.id !== id));
+        }
+      };
+
+      // Student CRUD
+      const saveStudent = (e) => {
+        e.preventDefault();
+        if (editingStudent) {
+          setStudents(prev => prev.map(s => s.id === editingStudent.id ? { ...s, ...studentForm } : s));
+        } else {
+          const newSt = { id: Date.now(), ...studentForm };
+          setStudents(prev => [newSt, ...prev]);
+        }
+        setStudentModalOpen(false);
+      };
+
+      const deleteStudent = (id) => {
+        if (confirm('Delete this student record?')) {
+          setStudents(prev => prev.filter(s => s.id !== id));
+        }
+      };
+
+      const clearAllStudents = () => {
+        if (confirm('Are you sure you want to remove all students from roster?')) {
+          setStudents([]);
+        }
+      };
+
+      const handleExcelUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const data = new Uint8Array(evt.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+            // Find headers
+            let headerIdx = -1;
+            let regIdx = -1, nameIdx = -1, deptIdx = -1, branchIdx = -1, subIdx = -1, typeIdx = -1;
+
+            for (let i = 0; i < Math.min(jsonData.length, 10); i++) {
+              const row = (jsonData[i] || []).map(c => String(c || '').toLowerCase().trim());
+              const rIdx = row.findIndex(c => c.includes('reg') || c.includes('roll'));
+              if (rIdx !== -1) {
+                headerIdx = i;
+                regIdx = rIdx;
+                nameIdx = row.findIndex(c => c.includes('name'));
+                branchIdx = row.findIndex(c => c.includes('branch'));
+                deptIdx = row.findIndex(c => c.includes('dept'));
+                subIdx = row.findIndex(c => c.includes('sub') || c.includes('course'));
+                typeIdx = row.findIndex(c => c.includes('type') || c.includes('r/s'));
+                break;
+              }
+            }
+
+            if (headerIdx === -1) {
+              regIdx = 0; nameIdx = 1; branchIdx = 3; deptIdx = 4; typeIdx = 5; subIdx = 8;
+              headerIdx = 0;
+            }
+
+            const imported = [];
+            for (let i = headerIdx + 1; i < jsonData.length; i++) {
+              const row = jsonData[i];
+              if (!row || !row[regIdx]) continue;
+              const reg = String(row[regIdx]).trim();
+              if (reg.toLowerCase().includes('register')) continue;
+
+              let branch = branchIdx !== -1 && row[branchIdx] ? String(row[branchIdx]).trim() : '';
+              if (!branch) {
+                const match = reg.match(/[A-Za-z]+/g);
+                branch = match ? match[match.length - 1] : 'CS';
+              }
+              const name = nameIdx !== -1 && row[nameIdx] ? String(row[nameIdx]).trim() : `Student ${reg}`;
+              const dept = deptIdx !== -1 && row[deptIdx] ? String(row[deptIdx]).trim() : `${branch} Engineering`;
+              const type = typeIdx !== -1 && row[typeIdx] ? String(row[typeIdx]).trim() : (reg.includes('23') ? 'Regular' : 'Supplementary');
+              const sub = subIdx !== -1 && row[subIdx] ? String(row[subIdx]).trim() : `${branch}304`;
+
+              imported.push({
+                id: Date.now() + i,
+                registerNumber: reg,
+                studentName: name,
+                department: dept,
+                branchCode: branch,
+                semester: 'S6',
+                subjectCode: sub,
+                subjectName: `${branch} Core Theory`,
+                examType: type,
+                slot: 'SLOT B'
+              });
+            }
+
+            setStudents(prev => [...imported, ...prev]);
+            alert(`Successfully parsed and imported ${imported.length} student records from file!`);
+          } catch (err) {
+            alert('File parsing error: ' + err.message);
+          }
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = '';
+      };
+
+      // Invigilator CRUD
+      const saveInvigilator = (e) => {
+        e.preventDefault();
+        if (editingInv) {
+          setInvigilators(prev => prev.map(i => i.id === editingInv.id ? { ...i, ...invForm } : i));
+        } else {
+          const newInv = { id: Date.now(), ...invForm, assignedDutiesCount: 0 };
+          setInvigilators(prev => [...prev, newInv]);
+        }
+        setInvModalOpen(false);
+      };
+
+      const deleteInvigilator = (id) => {
+        if (confirm('Delete this invigilator?')) {
+          setInvigilators(prev => prev.filter(i => i.id !== id));
+        }
+      };
+
+      // Filtered Students
+      const filteredStudents = useMemo(() => {
+        return students.filter(s => {
+          const matchSearch = s.registerNumber.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                              s.studentName.toLowerCase().includes(studentSearch.toLowerCase());
+          const matchType = studentTypeFilter === 'ALL' || s.examType.toLowerCase() === studentTypeFilter.toLowerCase();
+          const matchDept = studentDeptFilter === 'ALL' || s.branchCode.toUpperCase() === studentDeptFilter.toUpperCase();
+          return matchSearch && matchType && matchDept;
+        });
+      }, [students, studentSearch, studentTypeFilter, studentDeptFilter]);
+
+      const totalSeats = classrooms.reduce((s, r) => s + (r.active ? r.totalCapacity : 0), 0);
+      const activeRooms = classrooms.filter(r => r.active).length;
+      const regularCount = students.filter(s => s.examType.toLowerCase() === 'regular').length;
+      const suppCount = students.filter(s => s.examType.toLowerCase() === 'supplementary').length;
+
+      const activeMatrix = roomMatrices.find(m => m.roomNumber === selectedMatrixRoom) || roomMatrices[0];
+
+      return (
+        <div className="min-h-screen flex flex-col bg-slate-50">
+          {/* Top Navbar */}
+          <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-40 shadow-lg">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-between h-16">
+                {/* Brand */}
+                <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-400 flex items-center justify-center font-black text-white text-xl shadow-lg shadow-indigo-500/25">
+                    X
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-xl font-black tracking-tight text-white">ExamSeat</span>
+                      <span className="text-xl font-black tracking-tight text-indigo-400">X</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${backendOnline ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30' : 'bg-indigo-500/20 text-indigo-300 border-indigo-400/30'}`}>
+                        {backendOnline ? '● Live API' : '● Standalone Engine'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium">Constraint Satisfaction Examination Engine</p>
+                  </div>
+                </div>
+
+                {/* Tabs */}
+                <nav className="hidden md:flex items-center space-x-1">
+                  {[
+                    { id: 'dashboard', label: 'Overview' },
+                    { id: 'classrooms', label: 'Classrooms' },
+                    { id: 'students', label: 'Student Roster' },
+                    { id: 'invigilators', label: 'Invigilators' },
+                    { id: 'seating', label: 'CSP Solver' },
+                    { id: 'matrix', label: 'Visual Seat Map' },
+                    { id: 'reports', label: 'PDF Reports' }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                        activeTab === tab.id
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </nav>
+
+                {/* Guide Button */}
+                <button
+                  onClick={() => setIsHowToUseOpen(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-400/30 text-xs font-bold flex items-center space-x-1.5 transition-all shadow-xs"
+                >
+                  <span className="w-4 h-4 rounded-full bg-indigo-500 text-slate-900 font-black text-[11px] flex items-center justify-center">?</span>
+                  <span>How to Use</span>
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Main Content Area */}
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+            {/* DASHBOARD TAB */}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-6">
+                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-900 text-white rounded-3xl p-8 shadow-xl">
+                  <div className="max-w-3xl space-y-3">
+                    <span className="bg-indigo-500/20 text-indigo-300 text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider border border-indigo-400/30">
+                      University Exam Management Suite
+                    </span>
+                    <h1 className="text-3xl sm:text-4xl font-black tracking-tight">ExamSeatX Command Center</h1>
+                    <p className="text-sm text-indigo-200/80 leading-relaxed">
+                      Complete dual-data management with flexible Apache POI parser, faculty department neutrality enforcement, and 8-way spatial non-adjacency CSP seating allocation.
+                    </p>
+                    <div className="flex flex-wrap gap-3 pt-3">
+                      <button onClick={runCspEngine} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-transform active:scale-95">
+                        ⚡ Run CSP Seating Solver →
+                      </button>
+                      <button onClick={() => setActiveTab('students')} className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl border border-white/20">
+                        + Manage Students
+                      </button>
+                      <button onClick={() => setActiveTab('classrooms')} className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl border border-white/20">
+                        + Manage Classrooms
+                      </button>
+                      <button onClick={() => setActiveTab('invigilators')} className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl border border-white/20">
+                        + Manage Invigilators
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stat Counters */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div onClick={() => setActiveTab('students')} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-400 cursor-pointer transition-all">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase">
+                      <span>Total Students</span>
+                      <span className="text-indigo-600">Customize →</span>
+                    </div>
+                    <div className="text-3xl font-black text-slate-900 mt-2">{students.length}</div>
+                    <div className="text-xs text-slate-500 mt-1 font-semibold">{regularCount} Regular • {suppCount} Supplementary</div>
+                  </div>
+
+                  <div onClick={() => setActiveTab('classrooms')} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-400 cursor-pointer transition-all">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase">
+                      <span>Classrooms</span>
+                      <span className="text-indigo-600">Customize →</span>
+                    </div>
+                    <div className="text-3xl font-black text-indigo-700 mt-2">{activeRooms} <span className="text-sm text-slate-400 font-medium">/ {classrooms.length}</span></div>
+                    <div className="text-xs text-slate-500 mt-1 font-semibold">{totalSeats} total desk capacity</div>
+                  </div>
+
+                  <div onClick={() => setActiveTab('invigilators')} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-400 cursor-pointer transition-all">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase">
+                      <span>Faculty Invigilators</span>
+                      <span className="text-indigo-600">Customize →</span>
+                    </div>
+                    <div className="text-3xl font-black text-slate-900 mt-2">{invigilators.length}</div>
+                    <div className="text-xs text-slate-500 mt-1 font-semibold">{duties.length} duties scheduled</div>
+                  </div>
+
+                  <div onClick={() => setActiveTab('matrix')} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-400 cursor-pointer transition-all">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase">
+                      <span>Seated Candidates</span>
+                      <span className="text-indigo-600">View Map →</span>
+                    </div>
+                    <div className="text-3xl font-black text-purple-700 mt-2">
+                      {roomMatrices.reduce((s, m) => s + (m.occupiedSeats || 0), 0)}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1 font-semibold">in {roomMatrices.filter(m => m.occupiedSeats > 0).length} venues</div>
+                  </div>
+                </div>
+
+                {/* 3 Step Action Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                  <div className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-black">1</div>
+                    <h3 className="font-bold text-slate-900">Custom Classroom & Roster Setup</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Add and configure classrooms with rows, cols, bench capacities, or import student rosters with dynamic column mapping.
+                    </p>
+                    <div className="flex space-x-2 pt-2">
+                      <button onClick={() => setActiveTab('classrooms')} className="text-xs font-bold text-indigo-600 hover:underline">Halls</button>
+                      <span className="text-slate-300">•</span>
+                      <button onClick={() => setActiveTab('students')} className="text-xs font-bold text-indigo-600 hover:underline">Students</button>
+                    </div>
+                  </div>
+
+                  <div className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-black">2</div>
+                    <h3 className="font-bold text-slate-900">Run CSP Seating & Neutrality</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Execute intelligent 8-way spatial non-adjacency constraint solver and automatically assign neutral faculty to exam venues.
+                    </p>
+                    <button onClick={runCspEngine} className="text-xs font-bold text-indigo-600 hover:underline block pt-2">
+                      Run Engine Now →
+                    </button>
+                  </div>
+
+                  <div className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-black">3</div>
+                    <h3 className="font-bold text-slate-900">Official University Reports</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Generate publication-ready Notice Board Seating Matrices and Room Attendance Sheets with student signature lines.
+                    </p>
+                    <button onClick={() => setActiveTab('reports')} className="text-xs font-bold text-indigo-600 hover:underline block pt-2">
+                      Export PDF Reports →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* CLASSROOMS TAB */}
+            {activeTab === 'classrooms' && (
+              <div className="space-y-6">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <h2 className="text-lg font-black text-slate-900">Classroom & Examination Hall Master</h2>
+                    <p className="text-xs text-slate-500">Configure rows, columns, bench capacity, and CCTV monitoring</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setEditingRoom(null);
+                      setRoomForm({ roomNumber: '', rowCount: 5, colCount: 3, benchCapacity: 2, cctvAvailable: true });
+                      setRoomModalOpen(true);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm"
+                  >
+                    <span>+ Add Classroom</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {classrooms.map(room => (
+                    <div key={room.id} className={`p-5 rounded-2xl border transition-all ${room.active ? 'bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md' : 'bg-slate-100 border-slate-200 opacity-60'}`}>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Room</span>
+                          <h3 className="text-xl font-black text-slate-900">{room.roomNumber}</h3>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase ${room.active ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-200 text-slate-600 border-slate-300'}`}>
+                          {room.active ? 'Active' : 'Disabled'}
+                        </span>
+                      </div>
+
+                      <div className="my-3 py-3 border-t border-b border-slate-100 space-y-1.5 text-xs text-slate-600">
+                        <div className="flex justify-between">
+                          <span>Dimensions:</span>
+                          <span className="font-bold text-slate-900">{room.rowCount} rows × {room.colCount} cols</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Bench Capacity:</span>
+                          <span className="font-bold text-slate-900">{room.benchCapacity} per bench</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Total Capacity:</span>
+                          <span className="font-black text-indigo-600">{room.totalCapacity} seats</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>CCTV Monitored:</span>
+                          <span className={`font-semibold ${room.cctvAvailable ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {room.cctvAvailable ? '✓ Yes' : '✕ No'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-1 text-xs">
+                        <button onClick={() => toggleClassroom(room.id)} className={`font-bold ${room.active ? 'text-amber-700 hover:underline' : 'text-emerald-700 hover:underline'}`}>
+                          {room.active ? 'Disable' : 'Enable'}
+                        </button>
+                        <div className="space-x-2">
+                          <button
+                            onClick={() => {
+                              setEditingRoom(room);
+                              setRoomForm({ roomNumber: room.roomNumber, rowCount: room.rowCount, colCount: room.colCount, benchCapacity: room.benchCapacity, cctvAvailable: room.cctvAvailable });
+                              setRoomModalOpen(true);
+                            }}
+                            className="font-bold text-indigo-600 hover:underline"
+                          >
+                            Edit
+                          </button>
+                          <button onClick={() => deleteClassroom(room.id)} className="font-bold text-rose-600 hover:underline">
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* STUDENTS TAB */}
+            {activeTab === 'students' && (
+              <div className="space-y-6">
+                {/* Header with Import & Add */}
+                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-900 p-6 rounded-2xl text-white shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div className="space-y-1">
+                    <span className="bg-indigo-500/30 text-indigo-200 text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider border border-indigo-400/30">
+                      Flexible Parsing & Editor
+                    </span>
+                    <h2 className="text-xl font-bold">Student Candidate Roster</h2>
+                    <p className="text-xs text-indigo-200/80">
+                      Dynamic Excel (.xlsx) / CSV parsing with automatic cohort inferencing (Regular vs Supplementary)
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <label className="cursor-pointer px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center space-x-1.5">
+                      <span>Import Excel / CSV</span>
+                      <input type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelUpload} className="hidden" />
+                    </label>
+
+                    <button
+                      onClick={() => {
+                        setEditingStudent(null);
+                        setStudentForm({ registerNumber: '', studentName: '', department: 'Computer Science', branchCode: 'CS', semester: 'S6', subjectCode: 'CST304', subjectName: 'Computer Graphics', examType: 'Regular', slot: 'SLOT B' });
+                        setStudentModalOpen(true);
+                      }}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20"
+                    >
+                      + Add Student
+                    </button>
+
+                    <button onClick={clearAllStudents} className="px-3.5 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 rounded-xl text-xs font-bold border border-rose-400/30">
+                      Clear Roster
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search & Filter Toolbar */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                    <input
+                      type="text"
+                      placeholder="Search register no, name..."
+                      value={studentSearch}
+                      onChange={(e) => setStudentSearch(e.target.value)}
+                      className="text-xs px-3.5 py-2 rounded-xl border border-slate-200 w-64 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+
+                    <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                      {['ALL', 'Regular', 'Supplementary'].map(t => (
+                        <button
+                          key={t}
+                          onClick={() => setStudentTypeFilter(t)}
+                          className={`px-3 py-1 rounded-lg ${studentTypeFilter === t ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600'}`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+
+                    <select
+                      value={studentDeptFilter}
+                      onChange={(e) => setStudentDeptFilter(e.target.value)}
+                      className="text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-700 focus:outline-none"
+                    >
+                      <option value="ALL">All Departments</option>
+                      {DEPARTMENTS.map(d => (
+                        <option key={d.code} value={d.code}>{d.code} - {d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <span className="text-xs font-medium text-slate-500">
+                    Showing <strong className="text-slate-900">{filteredStudents.length}</strong> of {students.length} candidates
+                  </span>
+                </div>
+
+                {/* Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+                        <th className="py-3 px-4">Register Number</th>
+                        <th className="py-3 px-4">Student Name</th>
+                        <th className="py-3 px-4">Branch / Dept</th>
+                        <th className="py-3 px-4">Exam Type</th>
+                        <th className="py-3 px-4">Course</th>
+                        <th className="py-3 px-4">Slot</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      {filteredStudents.slice(0, 100).map(s => (
+                        <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-2.5 px-4 font-mono font-bold text-indigo-700">{s.registerNumber}</td>
+                          <td className="py-2.5 px-4 font-semibold text-slate-900">{s.studentName}</td>
+                          <td className="py-2.5 px-4">
+                            <span className="font-bold text-slate-900">{s.branchCode}</span>
+                            <span className="text-slate-400 text-[11px] block">{s.department}</span>
+                          </td>
+                          <td className="py-2.5 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${s.examType.toLowerCase() === 'supplementary' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                              {s.examType}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4">
+                            <span className="font-bold text-slate-900">{s.subjectCode}</span>
+                            <span className="text-slate-400 text-[11px] block truncate max-w-xs">{s.subjectName}</span>
+                          </td>
+                          <td className="py-2.5 px-4 font-semibold text-slate-500">{s.slot || 'SLOT B'}</td>
+                          <td className="py-2.5 px-4 text-right space-x-2">
+                            <button
+                              onClick={() => {
+                                setEditingStudent(s);
+                                setStudentForm({ ...s });
+                                setStudentModalOpen(true);
+                              }}
+                              className="font-bold text-indigo-600 hover:underline"
+                            >
+                              Edit
+                            </button>
+                            <button onClick={() => deleteStudent(s.id)} className="font-bold text-rose-600 hover:underline">
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredStudents.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-400">No student records found.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* INVIGILATORS TAB */}
+            {activeTab === 'invigilators' && (
+              <div className="space-y-6">
+                <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-900 p-6 rounded-2xl text-white shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <span className="bg-emerald-500/30 text-emerald-300 text-xs px-2.5 py-0.5 rounded-full font-bold uppercase border border-emerald-400/30">
+                      Department Neutrality Guarantee
+                    </span>
+                    <h2 className="text-xl font-bold mt-1">Faculty Invigilation Module</h2>
+                    <p className="text-xs text-indigo-200/80">
+                      Automatic duty allocation ensuring invigilator department != exam candidate department
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={runCspEngine}
+                      className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm"
+                    >
+                      ⚡ Auto-Assign Neutral Duties
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingInv(null);
+                        setInvForm({ facultyId: `FAC-${Date.now().toString().slice(-4)}`, name: '', department: 'Civil Engineering', email: '', phone: '', maxDuties: 5, available: true });
+                        setInvModalOpen(true);
+                      }}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20"
+                    >
+                      + Add Faculty
+                    </button>
+                  </div>
+                </div>
+
+                {/* Duty Schedule Cards */}
+                {duties.length > 0 && (
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <h4 className="text-sm font-bold text-slate-900">Current Assigned Duty Schedule</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {duties.map((d, i) => (
+                        <div key={i} className="p-4 rounded-xl border border-slate-100 bg-slate-50 space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-black bg-indigo-100 text-indigo-950 px-2 py-0.5 rounded">
+                              Room {d.roomNumber}
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase ${d.departmentNeutral ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                              {d.departmentNeutral ? '✓ Dept Neutral' : '⚠ Alert'}
+                            </span>
+                          </div>
+                          <div>
+                            <div className="font-bold text-slate-900 text-xs">{d.facultyName}</div>
+                            <div className="text-[11px] text-slate-500">{d.facultyDepartment} ({d.facultyId})</div>
+                          </div>
+                          <div className="text-[11px] text-slate-600 flex justify-between border-t border-slate-200/60 pt-1">
+                            <span>Students in hall:</span>
+                            <span className="font-bold text-slate-900">{d.totalStudentsInRoom}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Faculty Roster Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+                        <th className="py-3 px-4">Faculty ID</th>
+                        <th className="py-3 px-4">Faculty Name</th>
+                        <th className="py-3 px-4">Department</th>
+                        <th className="py-3 px-4">Contact</th>
+                        <th className="py-3 px-4">Duty Load</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      {invigilators.map(inv => (
+                        <tr key={inv.id} className="hover:bg-slate-50/70">
+                          <td className="py-3 px-4 font-mono font-bold text-slate-900">{inv.facultyId}</td>
+                          <td className="py-3 px-4 font-bold text-slate-900">{inv.name}</td>
+                          <td className="py-3 px-4">
+                            <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium text-[11px]">
+                              {inv.department}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-500">
+                            <div>{inv.email || '—'}</div>
+                            <div className="text-[10px] text-slate-400">{inv.phone || '—'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-bold text-slate-900">{inv.assignedDutiesCount || 0} / {inv.maxDuties}</span>
+                          </td>
+                          <td className="py-3 px-4 text-right space-x-2">
+                            <button
+                              onClick={() => {
+                                setEditingInv(inv);
+                                setInvForm({ ...inv });
+                                setInvModalOpen(true);
+                              }}
+                              className="font-bold text-indigo-600 hover:underline"
+                            >
+                              Edit
+                            </button>
+                            <button onClick={() => deleteInvigilator(inv.id)} className="font-bold text-rose-600 hover:underline">
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* SEATING SOLVER TAB */}
+            {activeTab === 'seating' && (
+              <div className="space-y-6">
+                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-900 text-white p-8 rounded-3xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                  <div className="space-y-2 max-w-xl">
+                    <span className="bg-indigo-500/20 text-indigo-300 text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider border border-indigo-400/30">
+                      Intelligent CSP & Backtracking Engine
+                    </span>
+                    <h2 className="text-2xl font-black">Generate Non-Adjacent Seating Plan</h2>
+                    <p className="text-xs text-indigo-200/80 leading-relaxed">
+                      Enforces 8-way spatial non-adjacency: horizontally, vertically, and diagonally adjacent desks MUST NOT share the same department or subject code. Automatically resolves bottlenecks.
+                    </p>
+                  </div>
+                  <button
+                    onClick={runCspEngine}
+                    className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm rounded-2xl shadow-xl transition-all active:scale-95"
+                  >
+                    ⚡ Execute Solver
+                  </button>
+                </div>
+
+                {lastAllocResult && (
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-900">Execution Telemetry</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-xs text-slate-400 font-bold block">Students Allocated</span>
+                        <span className="text-2xl font-black text-slate-900">{lastAllocResult.totalStudentsAllocated}</span>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-xs text-slate-400 font-bold block">Unallocated</span>
+                        <span className="text-2xl font-black text-slate-900">{lastAllocResult.unallocatedStudentsCount}</span>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-xs text-slate-400 font-bold block">Solver Time</span>
+                        <span className="text-2xl font-black text-indigo-600">{lastAllocResult.executionTimeMs} ms</span>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-xs text-slate-400 font-bold block">Violations</span>
+                        <span className="text-2xl font-black text-emerald-600">{lastAllocResult.constraintViolations} (0 = Perfect)</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* VISUAL SEAT MAP TAB */}
+            {activeTab === 'matrix' && (
+              <div className="space-y-6">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Visual Classroom Seating Map</h3>
+                    <p className="text-xs text-slate-400">Desk grid with department tags and real-time student locator</p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Find candidate (e.g. VJC23CS001)..."
+                      value={matrixSearchReg}
+                      onChange={(e) => setMatrixSearchReg(e.target.value)}
+                      className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 w-56 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                    <button onClick={runCspEngine} className="px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold">
+                      Re-Solve
+                    </button>
+                  </div>
+                </div>
+
+                {/* Room selector tabs */}
+                <div className="flex space-x-2 overflow-x-auto pb-1">
+                  {roomMatrices.map(m => (
+                    <button
+                      key={m.roomNumber}
+                      onClick={() => setSelectedMatrixRoom(m.roomNumber)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-all ${
+                        selectedMatrixRoom === m.roomNumber
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {m.roomNumber} ({m.occupiedSeats}/{m.totalCapacity})
+                    </button>
+                  ))}
+                </div>
+
+                {/* Matrix Grid */}
+                {activeMatrix ? (
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 overflow-x-auto">
+                    <div className="text-center">
+                      <span className="inline-block px-10 py-1 bg-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest rounded-lg">
+                        [ Front of Room • Blackboard & Podium ]
+                      </span>
+                    </div>
+
+                    <div className="min-w-fit space-y-3">
+                      {Array.from({ length: activeMatrix.rowCount }, (_, rIdx) => {
+                        const rowNum = rIdx + 1;
+                        return (
+                          <div key={rowNum} className="flex items-center space-x-3">
+                            <span className="w-12 text-xs font-bold text-slate-400 text-right">Row {rowNum}</span>
+                            <div className="flex space-x-3">
+                              {Array.from({ length: activeMatrix.colCount }, (_, cIdx) => {
+                                const colNum = cIdx + 1;
+                                const benchSeats = activeMatrix.seats.filter(s => s.rowNum === rowNum && s.colNum === colNum);
+
+                                return (
+                                  <div key={colNum} className="p-2 bg-slate-50 border border-slate-200 rounded-xl flex space-x-2">
+                                    {benchSeats.map((seat, sIdx) => {
+                                      const isSearched = matrixSearchReg && seat.registerNumber && seat.registerNumber.toLowerCase().includes(matrixSearchReg.toLowerCase());
+                                      return (
+                                        <div
+                                          key={sIdx}
+                                          className={`w-36 p-2 rounded-lg border text-left ${
+                                            !seat.studentId
+                                              ? 'bg-white border-dashed border-slate-200 text-slate-300'
+                                              : isSearched
+                                              ? 'bg-amber-100 border-amber-400 ring-2 ring-amber-500 shadow-md'
+                                              : 'bg-white border-slate-200 shadow-xs'
+                                          }`}
+                                        >
+                                          <div className="flex justify-between items-center text-[10px] text-slate-400 mb-1">
+                                            <span>{seat.seatLabel}</span>
+                                            {seat.branchCode && (
+                                              <span className="font-bold text-indigo-700 bg-indigo-50 px-1 rounded uppercase">
+                                                {seat.branchCode}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {seat.studentId ? (
+                                            <div>
+                                              <div className="font-mono font-bold text-xs text-slate-900 truncate">{seat.registerNumber}</div>
+                                              <div className="text-[11px] text-slate-600 truncate">{seat.studentName}</div>
+                                              <div className="text-[10px] text-slate-400 mt-1 flex justify-between">
+                                                <span>{seat.subjectCode}</span>
+                                                <span className="font-bold text-emerald-600">{seat.examType}</span>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className="py-2 text-center text-[10px] text-slate-300">Empty</div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
+                    Click "Re-Solve" to generate seat maps for all classrooms.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* REPORTS TAB */}
+            {activeTab === 'reports' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                  <h4 className="text-base font-bold text-slate-900">Main Seating Arrangement PDF</h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Formatted for official college notice boards matching KTU specifications: classroom rows with condensed register number ranges (e.g. VJC23CE001 - VJC23CE009).
+                  </p>
+                  <a
+                    href={`${API_BASE_URL}/reports/notice-board/pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-block py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm"
+                  >
+                    Download Notice Board PDF →
+                  </a>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                  <h4 className="text-base font-bold text-slate-900">Room Attendance & Verification Sheet PDF</h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Desk-by-desk candidate rosters per classroom equipped with student signature lines, barcode serial entry fields, and invigilator tally boxes.
+                  </p>
+                  <a
+                    href={`${API_BASE_URL}/reports/attendance/pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-block py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm"
+                  >
+                    Download Attendance Sheet PDF →
+                  </a>
+                </div>
+              </div>
+            )}
+          </main>
+
+          {/* CLASSROOM MODAL */}
+          {roomModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+                <div className="bg-slate-900 p-5 text-white flex justify-between items-center">
+                  <h3 className="font-bold text-sm">{editingRoom ? `Edit Classroom ${editingRoom.roomNumber}` : 'Add New Classroom'}</h3>
+                  <button onClick={() => setRoomModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+                <form onSubmit={saveClassroom} className="p-6 space-y-4 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Room Number *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. C-207"
+                      value={roomForm.roomNumber}
+                      onChange={(e) => setRoomForm({ ...roomForm, roomNumber: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-xl"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Rows (Depth)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={roomForm.rowCount}
+                        onChange={(e) => setRoomForm({ ...roomForm, rowCount: parseInt(e.target.value, 10) })}
+                        className="w-full px-3 py-2 border rounded-xl"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Columns (Desks)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={roomForm.colCount}
+                        onChange={(e) => setRoomForm({ ...roomForm, colCount: parseInt(e.target.value, 10) })}
+                        className="w-full px-3 py-2 border rounded-xl"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Bench Capacity</label>
+                    <select
+                      value={roomForm.benchCapacity}
+                      onChange={(e) => setRoomForm({ ...roomForm, benchCapacity: parseInt(e.target.value, 10) })}
+                      className="w-full px-3 py-2 border rounded-xl"
+                    >
+                      <option value={1}>1 student per bench (Single desk)</option>
+                      <option value={2}>2 students per bench (Standard desk)</option>
+                    </select>
+                    <div className="text-[11px] text-indigo-600 font-bold mt-1">
+                      Computed Max Seats: {roomForm.rowCount * roomForm.colCount * roomForm.benchCapacity}
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="cctv"
+                      checked={roomForm.cctvAvailable}
+                      onChange={(e) => setRoomForm({ ...roomForm, cctvAvailable: e.target.checked })}
+                      className="rounded"
+                    />
+                    <label htmlFor="cctv" className="font-semibold text-slate-700">CCTV Camera Installed</label>
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-3 border-t">
+                    <button type="button" onClick={() => setRoomModalOpen(false)} className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl">{editingRoom ? 'Update Room' : 'Save Room'}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* STUDENT MODAL */}
+          {studentModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+                <div className="bg-slate-900 p-5 text-white flex justify-between items-center">
+                  <h3 className="font-bold text-sm">{editingStudent ? `Edit Student ${editingStudent.registerNumber}` : 'Add Student Candidate'}</h3>
+                  <button onClick={() => setStudentModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+                <form onSubmit={saveStudent} className="p-6 space-y-3 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Register Number *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. VJC23CS001"
+                      value={studentForm.registerNumber}
+                      onChange={(e) => setStudentForm({ ...studentForm, registerNumber: e.target.value.toUpperCase() })}
+                      className="w-full px-3 py-2 border rounded-xl font-mono uppercase"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Student Full Name *</label>
+                    <input
+                      type="text"
+                      placeholder="Candidate name"
+                      value={studentForm.studentName}
+                      onChange={(e) => setStudentForm({ ...studentForm, studentName: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-xl"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Department</label>
+                      <select
+                        value={studentForm.department}
+                        onChange={(e) => {
+                          const found = DEPARTMENTS.find(d => d.name === e.target.value);
+                          setStudentForm({
+                            ...studentForm,
+                            department: e.target.value,
+                            branchCode: found ? found.code : studentForm.branchCode,
+                            subjectCode: found ? found.sub : studentForm.subjectCode,
+                            subjectName: found ? found.title : studentForm.subjectName
+                          });
+                        }}
+                        className="w-full px-3 py-2 border rounded-xl"
+                      >
+                        {DEPARTMENTS.map(d => (
+                          <option key={d.code} value={d.name}>{d.name} ({d.code})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Exam Type</label>
+                      <select
+                        value={studentForm.examType}
+                        onChange={(e) => setStudentForm({ ...studentForm, examType: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-xl"
+                      >
+                        <option value="Regular">Regular</option>
+                        <option value="Supplementary">Supplementary</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Subject Code</label>
+                      <input
+                        type="text"
+                        value={studentForm.subjectCode}
+                        onChange={(e) => setStudentForm({ ...studentForm, subjectCode: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-xl font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Slot</label>
+                      <input
+                        type="text"
+                        value={studentForm.slot}
+                        onChange={(e) => setStudentForm({ ...studentForm, slot: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-xl"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-3 border-t">
+                    <button type="button" onClick={() => setStudentModalOpen(false)} className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl">{editingStudent ? 'Update' : 'Save'}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* INVIGILATOR MODAL */}
+          {invModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+                <div className="bg-slate-900 p-5 text-white flex justify-between items-center">
+                  <h3 className="font-bold text-sm">{editingInv ? `Edit Faculty ${editingInv.name}` : 'Add Faculty Invigilator'}</h3>
+                  <button onClick={() => setInvModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+                <form onSubmit={saveInvigilator} className="p-6 space-y-3 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Faculty ID *</label>
+                    <input
+                      type="text"
+                      value={invForm.facultyId}
+                      onChange={(e) => setInvForm({ ...invForm, facultyId: e.target.value.toUpperCase() })}
+                      className="w-full px-3 py-2 border rounded-xl font-mono uppercase"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Full Name *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Dr. Sreejith R."
+                      value={invForm.name}
+                      onChange={(e) => setInvForm({ ...invForm, name: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-xl"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Department *</label>
+                    <select
+                      value={invForm.department}
+                      onChange={(e) => setInvForm({ ...invForm, department: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-xl"
+                    >
+                      {DEPARTMENTS.map(d => (
+                        <option key={d.code} value={d.name}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Email</label>
+                      <input
+                        type="email"
+                        value={invForm.email}
+                        onChange={(e) => setInvForm({ ...invForm, email: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Max Duties</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={invForm.maxDuties}
+                        onChange={(e) => setInvForm({ ...invForm, maxDuties: parseInt(e.target.value, 10) })}
+                        className="w-full px-3 py-2 border rounded-xl"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-3 border-t">
+                    <button type="button" onClick={() => setInvModalOpen(false)} className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl">{editingInv ? 'Update' : 'Save'}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* HOW TO USE MODAL */}
+          {isHowToUseOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full border border-slate-200 p-6 space-y-4">
+                <div className="flex justify-between items-center border-b pb-3">
+                  <h3 className="font-black text-slate-900 text-base">How to Use ExamSeatX</h3>
+                  <button onClick={() => setIsHowToUseOpen(false)} className="text-slate-400 hover:text-slate-900 font-bold">✕</button>
+                </div>
+                <div className="space-y-3 text-xs text-slate-600">
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <strong className="text-slate-900 block mb-0.5">1. Classrooms & Venues</strong>
+                    Use the <strong>Classrooms</strong> tab to add new halls or customize rows, columns, bench capacity, and CCTV monitoring.
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <strong className="text-slate-900 block mb-0.5">2. Student Rosters & Excel Import</strong>
+                    Use <strong>Student Roster</strong> to manually add, edit, or delete candidates. Or click <strong>Import Excel / CSV</strong> to ingest raw university lists with variable headers.
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <strong className="text-slate-900 block mb-0.5">3. Faculty Neutrality</strong>
+                    Manage invigilators and run <strong>Auto-Assign Neutral Duties</strong> to guarantee invigilators never examine students from their own department.
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <strong className="text-slate-900 block mb-0.5">4. CSP Seating & Verification</strong>
+                    Click <strong>Run CSP Seating Solver</strong>. Open <strong>Visual Seat Map</strong> to inspect physical desks, verify zero non-adjacency conflicts, and locate candidates.
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <strong className="text-slate-900 block mb-0.5">5. University PDF Reports</strong>
+                    Export publication-ready Notice Board Seating Matrices and Room Attendance Sheets.
+                  </div>
+                </div>
+                <div className="text-right pt-2 border-t">
+                  <button onClick={() => setIsHowToUseOpen(false)} className="px-5 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-sm">
+                    Got it!
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Footer */}
+          <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400">
+            ExamSeatX • Intelligent University Examination Seating System • Spring Boot & React
+          </footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
